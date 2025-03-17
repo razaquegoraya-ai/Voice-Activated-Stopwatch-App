@@ -1,5 +1,9 @@
 # Voice-Activated Stopwatch App
 
+![WhatsApp Image 2025-03-17 at 16 01 58](https://github.com/user-attachments/assets/b574ed66-87ec-483d-8249-44e234189622)
+
+
+
 A modern React-based stopwatch application that can be controlled using voice commands. Built with TypeScript and Material-UI, this app provides a sleek interface for timing activities with voice activation and comment functionality.
 
 ## Features
