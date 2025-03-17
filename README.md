@@ -1,46 +1,86 @@
-# Getting Started with Create React App
+# Voice-Activated Stopwatch App
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A modern React-based stopwatch application that can be controlled using voice commands. Built with TypeScript and Material-UI, this app provides a sleek interface for timing activities with voice activation and comment functionality.
 
-## Available Scripts
+## Features
 
-In the project directory, you can run:
+- 🎤 Voice command activation
+- ⏱️ Automatic 10-second stopwatch
+- 🔔 Configurable siren alert
+- 💬 Comment addition for each timing session
+- 📝 History tracking with timestamps
+- ⌨️ Keyboard shortcuts for quick control
+- 🎨 Modern, responsive UI design
 
-### `npm start`
+## Technologies Used
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+- React 18
+- TypeScript
+- Material-UI (MUI)
+- Web Audio API
+- MediaStream Recording API
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+## Getting Started
 
-### `npm test`
+### Prerequisites
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+- Node.js (v14 or higher)
+- npm or yarn
 
-### `npm run build`
+### Installation
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/voice-stopwatch-app.git
+   cd voice-stopwatch-app
+   ```
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+3. Start the development server:
+   ```bash
+   npm start
+   ```
 
-### `npm run eject`
+4. Open [http://localhost:3000](http://localhost:3000) in your browser
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+### Usage
 
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+1. Click "Start Voice Command" to begin listening for voice input
+2. Speak the trigger command to start the stopwatch
+3. The stopwatch will run for 10 seconds automatically
+4. Add comments while the timer is running
+5. After stopping, a siren will sound after a brief delay
+6. View and manage your timing history below
+7. Press 'R' or click Reset to start over
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
+## Configuration
 
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
+The following constants can be adjusted in `src/App.tsx`:
 
-## Learn More
+- `SOUND_THRESHOLD`: Sensitivity of voice detection (default: 0.05)
+- `STOPWATCH_DURATION`: Duration of the stopwatch in seconds (default: 10)
+- `SIREN_DELAY`: Delay before siren sounds in seconds (default: 3)
+- `SIREN_DURATION`: Duration of the siren sound in seconds (default: 2)
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+## Contributing
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+
+- Built with React and Material-UI
+- Uses Web Audio API for sound processing
+- Voice command detection implementation
+# Voice-Activated-Stopwatch-App
