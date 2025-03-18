@@ -109,58 +109,58 @@ interface TimeEntry {
 }
 
 const SOUND_THRESHOLD = 0.05;
-const STOPWATCH_DURATION = 10;
-const SIREN_DELAY = 3;
-const SIREN_DURATION = 2;
+const COUNTDOWN_DURATION = 10; // 10 seconds countdown
+const SIREN_DELAY = 0; // No delay, play immediately
+const SIREN_DURATION = 2; // 2 seconds
 
 function App() {
-  const [isRunning, setIsRunning] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isCountdown, setIsCountdown] = useState(false);
   const [time, setTime] = useState(0);
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [currentComment, setCurrentComment] = useState('');
-  const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const audioContext = useRef<AudioContext | null>(null);
   const analyser = useRef<AnalyserNode | null>(null);
   const microphone = useRef<MediaStreamAudioSourceNode | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const commandAudio = useRef<HTMLAudioElement | null>(null);
   const sirenAudio = useRef<{ play: () => void } | null>(null);
 
   useEffect(() => {
     // Initialize audio context
-    audioContext.current = new AudioContext();
-    analyser.current = audioContext.current.createAnalyser();
-    analyser.current.fftSize = 4096;
-    analyser.current.smoothingTimeConstant = 0.8;
+    try {
+      audioContext.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      analyser.current = audioContext.current.createAnalyser();
+      analyser.current.fftSize = 4096;
+      analyser.current.smoothingTimeConstant = 0.8;
 
-    // Load command audio
-    commandAudio.current = new Audio('/command.mp3');
+      // Create siren sound
+      const createSiren = () => {
+        const siren = audioContext.current!.createOscillator();
+        const gainNode = audioContext.current!.createGain();
+        siren.connect(gainNode);
+        gainNode.connect(audioContext.current!.destination);
 
-    // Create siren sound
-    const createSiren = () => {
-      const siren = audioContext.current!.createOscillator();
-      const gainNode = audioContext.current!.createGain();
-      siren.connect(gainNode);
-      gainNode.connect(audioContext.current!.destination);
+        siren.type = 'sine';
+        siren.frequency.setValueAtTime(440, audioContext.current!.currentTime);
+        gainNode.gain.setValueAtTime(0.5, audioContext.current!.currentTime);
 
-      siren.type = 'sine';
-      siren.frequency.setValueAtTime(440, audioContext.current!.currentTime);
-      gainNode.gain.setValueAtTime(0.5, audioContext.current!.currentTime);
+        return { siren, gainNode };
+      };
 
-      return { siren, gainNode };
-    };
+      const playSirenSound = () => {
+        const { siren, gainNode } = createSiren();
+        siren.start();
+        siren.frequency.exponentialRampToValueAtTime(880, audioContext.current!.currentTime + SIREN_DURATION/2);
+        siren.frequency.exponentialRampToValueAtTime(440, audioContext.current!.currentTime + SIREN_DURATION);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.current!.currentTime + SIREN_DURATION);
+        siren.stop(audioContext.current!.currentTime + SIREN_DURATION);
+      };
 
-    const playSirenSound = () => {
-      const { siren, gainNode } = createSiren();
-      siren.start();
-      siren.frequency.exponentialRampToValueAtTime(880, audioContext.current!.currentTime + SIREN_DURATION/2);
-      siren.frequency.exponentialRampToValueAtTime(440, audioContext.current!.currentTime + SIREN_DURATION);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.current!.currentTime + SIREN_DURATION);
-      siren.stop(audioContext.current!.currentTime + SIREN_DURATION);
-    };
-
-    sirenAudio.current = { play: playSirenSound } as any;
+      sirenAudio.current = { play: playSirenSound } as any;
+    } catch (error) {
+      console.error('Error initializing audio context:', error);
+    }
 
     // Add keyboard event listener for reset
     const handleKeyPress = (event: KeyboardEvent) => {
@@ -182,110 +182,117 @@ function App() {
     };
   }, []);
 
-  const startListening = async () => {
+  const startRecording = async () => {
     try {
       setIsProcessing(true);
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      microphone.current = audioContext.current!.createMediaStreamSource(stream);
-      microphone.current.connect(analyser.current!);
-      setIsListening(true);
+      
+      // Resume audio context if it was suspended
+      if (audioContext.current && audioContext.current.state === 'suspended') {
+        await audioContext.current.resume();
+      }
 
-      // Start analyzing audio for command detection
-      analyzeAudio();
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } 
+      });
+      
+      if (!audioContext.current || !analyser.current) {
+        throw new Error('Audio context not initialized');
+      }
+
+      microphone.current = audioContext.current.createMediaStreamSource(stream);
+      microphone.current.connect(analyser.current);
+      setIsRecording(true);
+      setIsProcessing(false);
+
+      // Start the timer
+      startStopwatch();
     } catch (error) {
       console.error('Error accessing microphone:', error);
       setIsProcessing(false);
+      setIsRecording(false);
+      alert('Error accessing microphone. Please make sure you have granted microphone permissions.');
     }
   };
 
-  const analyzeAudio = () => {
-    if (!analyser.current || !isListening) return;
-
-    const dataArray = new Float32Array(analyser.current.frequencyBinCount);
-    analyser.current.getFloatTimeDomainData(dataArray);
-
-    // Calculate RMS value with improved sensitivity
-    let sum = 0;
-    let peakInstantaneousPower = 0;
-
-    for (let i = 0; i < dataArray.length; i++) {
-      const power = dataArray[i] * dataArray[i];
-      sum += power;
-      peakInstantaneousPower = Math.max(peakInstantaneousPower, power);
-    }
-
-    const rms = Math.sqrt(sum / dataArray.length);
-
-    // Use both RMS and peak detection for better sensitivity
-    if (rms > SOUND_THRESHOLD || peakInstantaneousPower > SOUND_THRESHOLD * 2) {
-      checkForCommand();
-    }
-
-    requestAnimationFrame(analyzeAudio);
-  };
-
-  const checkForCommand = () => {
-    if (!isRunning) {
-      startStopwatch();
+  const stopRecording = () => {
+    try {
+      if (microphone.current) {
+        microphone.current.disconnect();
+        microphone.current = null;
+      }
+      setIsRecording(false);
+      setIsProcessing(false);
+      
+      // Start countdown
+      startCountdown();
+    } catch (error) {
+      console.error('Error stopping recording:', error);
+      setIsRecording(false);
       setIsProcessing(false);
     }
   };
 
-  const stopListening = () => {
-    if (microphone.current) {
-      microphone.current.disconnect();
-      setIsListening(false);
-    }
-    setIsProcessing(false);
-  };
-
   const startStopwatch = () => {
-    setIsRunning(true);
     setTime(0);
     intervalRef.current = setInterval(() => {
+      setTime(prevTime => prevTime + 1);
+    }, 1000);
+  };
+
+  const startCountdown = () => {
+    setIsCountdown(true);
+    setTime(COUNTDOWN_DURATION);
+    intervalRef.current = setInterval(() => {
       setTime(prevTime => {
-        if (prevTime >= STOPWATCH_DURATION) {
-          stopStopwatch();
-          return prevTime;
+        if (prevTime <= 1) {
+          stopCountdown();
+          return 0;
         }
-        return prevTime + 1;
+        return prevTime - 1;
       });
     }, 1000);
   };
 
-  const stopStopwatch = () => {
+  const stopCountdown = () => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
+      intervalRef.current = null;
     }
-    setIsRunning(false);
-
-    // Add the entry
+    setIsCountdown(false);
+    
+    // Add entry to history
     const newEntry: TimeEntry = {
       id: Date.now(),
       time: formatTime(time),
       comment: currentComment,
       timestamp: new Date()
     };
-
-    setEntries(prev => [...prev, newEntry]);
+    setEntries(prevEntries => [newEntry, ...prevEntries]);
     setCurrentComment('');
 
-    // Play siren after specified delay
-    setTimeout(() => {
-      if (sirenAudio.current) {
-        sirenAudio.current.play();
-      }
-    }, SIREN_DELAY * 1000);
+    // Play siren immediately
+    if (sirenAudio.current) {
+      sirenAudio.current.play();
+    }
   };
 
   const resetStopwatch = () => {
+    if (microphone.current) {
+      microphone.current.disconnect();
+      microphone.current = null;
+    }
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
+      intervalRef.current = null;
     }
-    setIsRunning(false);
+    setIsRecording(false);
+    setIsCountdown(false);
     setTime(0);
     setCurrentComment('');
-    setIsProcessing(false);
   };
 
   const formatTime = (seconds: number): string => {
@@ -295,141 +302,100 @@ function App() {
   };
 
   const deleteEntry = (id: number) => {
-    setEntries(prev => prev.filter(entry => entry.id !== id));
+    setEntries(prevEntries => prevEntries.filter(entry => entry.id !== id));
   };
 
   return (
     <ThemeProvider theme={theme}>
       <Container maxWidth="md">
-        <Box sx={{ my: 6 }}>
-          <Fade in={true} timeout={1000}>
-            <Box textAlign="center" mb={4}>
-              <TimerIcon sx={{ fontSize: 40, color: 'primary.main', mb: 2 }} />
-              <Typography variant="h1" gutterBottom>
-                Stopwatch App
-              </Typography>
-            </Box>
-          </Fade>
+        <Box sx={{ py: 4 }}>
+          <Typography variant="h1" align="center" gutterBottom>
+            Voice Stopwatch
+          </Typography>
+          
+          <StyledPaper>
+            <TimerDisplay align="center">
+              {formatTime(time)}
+            </TimerDisplay>
+            
+            <ButtonContainer>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={isRecording ? stopRecording : startRecording}
+                disabled={isProcessing || isCountdown}
+                startIcon={isProcessing ? <CircularProgress size={20} /> : <MicIcon />}
+              >
+                {isRecording ? 'Stop Recording' : 'Start Recording'}
+              </Button>
+              
+              <Button
+                variant="outlined"
+                color="secondary"
+                onClick={resetStopwatch}
+                disabled={!isRecording && !isCountdown && time === 0}
+                startIcon={<RestartAltIcon />}
+              >
+                Reset
+              </Button>
+            </ButtonContainer>
 
-          <StyledPaper elevation={3}>
-            <Fade in={true} timeout={1500}>
-              <Box>
-                <TimerDisplay align="center" gutterBottom>
-                  {formatTime(time)}
-                </TimerDisplay>
-
-                <ButtonContainer>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    onClick={startListening}
-                    disabled={isListening || isProcessing}
-                    startIcon={isProcessing ? <CircularProgress size={20} color="inherit" /> : <MicIcon />}
-                  >
-                    {isProcessing ? 'Processing...' : 'Start Voice Command'}
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    color="secondary"
-                    onClick={stopListening}
-                    disabled={!isListening}
-                    startIcon={<MicIcon />}
-                  >
-                    Stop Voice Command
-                  </Button>
-                  <Button
-                    variant="contained"
-                    color="error"
-                    onClick={resetStopwatch}
-                    disabled={!isRunning && time === 0}
-                    startIcon={<RestartAltIcon />}
-                  >
-                    Reset
-                  </Button>
-                </ButtonContainer>
-
-                <Typography
-                  variant="body2"
-                  align="center"
-                  color="text.secondary"
-                  sx={{
-                    mb: 3,
-                    backgroundColor: '#f5f5f5',
-                    py: 1,
-                    borderRadius: 1,
-                    fontWeight: 500
-                  }}
-                >
-                  Press 'R' key to reset the stopwatch
-                </Typography>
-
-                <TextField
-                  fullWidth
-                  label="Add a comment"
-                  value={currentComment}
-                  onChange={(e) => setCurrentComment(e.target.value)}
-                  disabled={!isRunning}
-                  variant="outlined"
-                  sx={{
-                    mt: 2,
-                    '& .MuiOutlinedInput-root': {
-                      borderRadius: 2,
-                    },
-                  }}
-                />
-              </Box>
-            </Fade>
-          </StyledPaper>
-
-          <Box sx={{ mt: 6 }}>
-            <Typography variant="h5" gutterBottom sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1,
-              color: 'text.primary',
-              fontWeight: 500,
-            }}>
-              <TimerIcon sx={{ fontSize: 28 }} />
-              Previous Times
+            <Typography
+              variant="body2"
+              align="center"
+              color="text.secondary"
+              sx={{ mb: 3 }}
+            >
+              {isRecording ? 'Recording in progress...' : 
+               isCountdown ? `Countdown: ${time} seconds remaining` : 
+               'Click Start Recording to begin'}
             </Typography>
-            <Divider sx={{ mb: 3 }} />
 
+            <TextField
+              fullWidth
+              label="Add Comment"
+              value={currentComment}
+              onChange={(e) => setCurrentComment(e.target.value)}
+              disabled={!isRecording && !isCountdown}
+              sx={{ mb: 3 }}
+            />
+
+            <Divider sx={{ my: 3 }} />
+
+            <Typography variant="h6" gutterBottom>
+              History
+            </Typography>
+            
             <List>
               {entries.map((entry) => (
-                <Fade in={true} key={entry.id}>
-                  <StyledListItem
-                    secondaryAction={
-                      <IconButton
-                        edge="end"
-                        onClick={() => deleteEntry(entry.id)}
-                        sx={{
-                          '&:hover': {
-                            color: 'error.main',
-                            backgroundColor: 'rgba(244, 67, 54, 0.1)',
-                          },
-                        }}
-                      >
-                        <DeleteIcon />
-                      </IconButton>
+                <StyledListItem
+                  key={entry.id}
+                  secondaryAction={
+                    <IconButton edge="end" onClick={() => deleteEntry(entry.id)}>
+                      <DeleteIcon />
+                    </IconButton>
+                  }
+                >
+                  <ListItemText
+                    primary={entry.time}
+                    secondary={
+                      <>
+                        {entry.comment && (
+                          <Typography component="span" variant="body2" color="text.secondary">
+                            {entry.comment}
+                          </Typography>
+                        )}
+                        <br />
+                        <Typography component="span" variant="caption" color="text.secondary">
+                          {entry.timestamp.toLocaleString()}
+                        </Typography>
+                      </>
                     }
-                  >
-                    <ListItemText
-                      primary={
-                        <Typography variant="h6" component="span">
-                          {entry.time}
-                        </Typography>
-                      }
-                      secondary={
-                        <Typography variant="body2" color="text.secondary">
-                          {entry.comment || 'No comment'} • {new Date(entry.timestamp).toLocaleTimeString()}
-                        </Typography>
-                      }
-                    />
-                  </StyledListItem>
-                </Fade>
+                  />
+                </StyledListItem>
               ))}
             </List>
-          </Box>
+          </StyledPaper>
         </Box>
       </Container>
     </ThemeProvider>
